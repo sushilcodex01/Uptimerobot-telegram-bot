@@ -11,6 +11,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from config import Config
 from bot_handlers import BotHandlers
 from url_monitor import URLMonitor
+from web_server import WebServer
 
 # Configure logging
 logging.basicConfig(
@@ -29,6 +30,7 @@ class TelegramURLBot:
         self.url_monitor = URLMonitor()
         self.bot_handlers = BotHandlers(self.url_monitor, self.config)
         self.application = None
+        self.web_server = WebServer(port=5555)
         
     async def setup_bot(self):
         """Initialize the Telegram bot application"""
@@ -80,15 +82,19 @@ class TelegramURLBot:
             raise
     
     async def run(self):
-        """Run the bot"""
+        """Run the bot and web server"""
         try:
-            logger.info("Starting Telegram URL Monitor Bot...")
+            logger.info("Starting Telegram URL Monitor Bot with Web Server...")
             
             # Setup bot
             await self.setup_bot()
             
             # Start monitoring task
             monitoring_task = await self.start_monitoring()
+            
+            # Start web server in a separate thread
+            web_thread = self.web_server.run_server()
+            logger.info("Web server started on port 5555")
             
             # Initialize and start the bot
             await self.application.initialize()

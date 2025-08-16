@@ -11,3 +11,5 @@ aiohttp==3.12.15
 # json
 # time
 # datetime
+telegram
+flask

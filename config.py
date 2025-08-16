@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class Config:
     def __init__(self):
-        self.bot_token = "8405898835:AAE6gmya8TGXPjHeLt0NObmLreqxM"
+        self.bot_token = "8405898835:AAE6g8TGXPjHeLt0NObIqFQv4mLreqxM"
         self.primary_admin_chat_id = 1691680798  # Main admin who can manage other admins
         self.admin_chat_ids = [1691680798]  # List of all admin chat IDs
         self.admin_data_file = "admin_data.json"  # File to store admin list
@@ -21,7 +21,7 @@ class Config:
         
     def _get_bot_token(self):
         """Get bot token from environment variables"""
-        token = os.getenv("BOT_TOKEN", "8405898835:AAE6gmya8TGXPjHeLt0NObILreqxM")
+        token = os.getenv("BOT_TOKEN", "8405898835:AAE6ga8TGXPjHeLt0NObIqFQv4mLreqxM")
         if not token:
             raise ValueError("BOT_TOKEN environment variable is required")
         return token
