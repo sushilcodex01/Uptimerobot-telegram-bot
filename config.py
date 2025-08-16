@@ -9,19 +9,18 @@ logger = logging.getLogger(__name__)
 
 class Config:
     def __init__(self):
-        self.bot_token = "8405898835:AAE6g8TGXPjHeLt0NObIqFQv4mLreqxM"
-        self.primary_admin_chat_id = 1691680798  # Main admin who can manage other admins
-        self.admin_chat_ids = [1691680798]  # List of all admin chat IDs
-        self.admin_data_file = "admin_data.json"  # File to store admin list
+        self.bot_token = "8060041650:AAHG2XvkP-8wi07B5GQ4D77RqcFEaAfMujU"
         self.ping_interval = 60  # seconds
         self.request_timeout = 30  # seconds
-        self.data_file = "urls_data.json"
         self.log_file = "bot.log"
-        self._load_admin_data()
+        # Bot is now open to all users, no admin restrictions
+        self.open_to_all_users = True
+        self.primary_admin_chat_id = 1691680798  # Primary admin
+        self.admin_list = [1691680798]  # List of admin chat IDs
         
     def _get_bot_token(self):
         """Get bot token from environment variables"""
-        token = os.getenv("BOT_TOKEN", "8405898835:AAE6ga8TGXPjHeLt0NObIqFQv4mLreqxM")
+        token = os.getenv("BOT_TOKEN", "8060041650:AAHG2XvkP-8wi07B5GQ4D77RqcFEaAfMujU")
         if not token:
             raise ValueError("BOT_TOKEN environment variable is required")
         return token
@@ -37,66 +36,31 @@ class Config:
         except ValueError:
             raise ValueError("ADMIN_CHAT_ID must be a valid integer")
     
-    def _load_admin_data(self):
-        """Load admin chat IDs from file"""
-        import json
-        try:
-            with open(self.admin_data_file, 'r') as f:
-                data = json.load(f)
-                self.admin_chat_ids = data.get('admin_chat_ids', [self.primary_admin_chat_id])
-                # Ensure primary admin is always in the list
-                if self.primary_admin_chat_id not in self.admin_chat_ids:
-                    self.admin_chat_ids.append(self.primary_admin_chat_id)
-        except (FileNotFoundError, json.JSONDecodeError):
-            # Create default admin data file
-            self._save_admin_data()
-            logger.info("Created default admin data file")
-    
-    def _save_admin_data(self):
-        """Save admin chat IDs to file"""
-        import json
-        try:
-            data = {
-                'admin_chat_ids': self.admin_chat_ids,
-                'primary_admin': self.primary_admin_chat_id
-            }
-            with open(self.admin_data_file, 'w') as f:
-                json.dump(data, f, indent=2)
-            logger.info(f"Saved admin data with {len(self.admin_chat_ids)} admins")
-        except Exception as e:
-            logger.error(f"Error saving admin data: {e}")
-    
-    def is_admin(self, chat_id):
-        """Check if the given chat ID is an admin"""
-        return chat_id in self.admin_chat_ids
+    def is_user_allowed(self, chat_id):
+        """Check if the user is allowed to use the bot (now open to all)"""
+        return True  # Bot is now open to all users
     
     def is_primary_admin(self, chat_id):
-        """Check if the given chat ID is the primary admin"""
+        """Check if user is the primary admin"""
         return chat_id == self.primary_admin_chat_id
     
     def add_admin(self, chat_id):
-        """Add a new admin chat ID"""
-        if chat_id not in self.admin_chat_ids:
-            self.admin_chat_ids.append(chat_id)
-            self._save_admin_data()
-            logger.info(f"Added new admin: {chat_id}")
+        """Add a new admin"""
+        if chat_id not in self.admin_list:
+            self.admin_list.append(chat_id)
             return True
         return False
     
     def remove_admin(self, chat_id):
-        """Remove an admin chat ID (except primary admin)"""
-        if chat_id == self.primary_admin_chat_id:
-            return False  # Cannot remove primary admin
-        if chat_id in self.admin_chat_ids:
-            self.admin_chat_ids.remove(chat_id)
-            self._save_admin_data()
-            logger.info(f"Removed admin: {chat_id}")
+        """Remove an admin (except primary admin)"""
+        if chat_id != self.primary_admin_chat_id and chat_id in self.admin_list:
+            self.admin_list.remove(chat_id)
             return True
         return False
     
     def get_admin_list(self):
-        """Get list of all admin chat IDs"""
-        return self.admin_chat_ids.copy()
+        """Get list of all admins"""
+        return self.admin_list.copy()
     
     def validate_config(self):
         """Validate all configuration parameters"""
@@ -104,9 +68,6 @@ class Config:
         
         if not self.bot_token:
             errors.append("Bot token is missing")
-        
-        if not self.admin_chat_id:
-            errors.append("Admin chat ID is missing")
         
         if self.ping_interval <= 0:
             errors.append("Ping interval must be positive")

@@ -30,7 +30,7 @@ class TelegramURLBot:
         self.url_monitor = URLMonitor()
         self.bot_handlers = BotHandlers(self.url_monitor, self.config)
         self.application = None
-        self.web_server = WebServer(port=5555)
+        self.web_server = WebServer(port=5000)
         
     async def setup_bot(self):
         """Initialize the Telegram bot application"""
@@ -52,12 +52,19 @@ class TelegramURLBot:
             self.application.add_handler(CommandHandler("removeadmin", self.bot_handlers.remove_admin_command))
             self.application.add_handler(CommandHandler("listadmins", self.bot_handlers.list_admins_command))
             
+            # Admin broadcast commands
+            self.application.add_handler(CommandHandler("broadcast", self.bot_handlers.broadcast_command))
+            self.application.add_handler(CommandHandler("broadcastimg", self.bot_handlers.broadcast_image_command))
+            
             # Add callback query handler for inline buttons
             from telegram.ext import CallbackQueryHandler
             self.application.add_handler(CallbackQueryHandler(self.bot_handlers.button_callback))
             
             # Add message handler for non-command messages
             self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.bot_handlers.handle_message))
+            
+            # Add photo handler for broadcast images
+            self.application.add_handler(MessageHandler(filters.PHOTO, self.bot_handlers.handle_broadcast_image))
             
             logger.info("Bot handlers registered successfully")
             
@@ -70,7 +77,7 @@ class TelegramURLBot:
         try:
             # Set the bot instance for sending alerts
             self.url_monitor.set_bot_instance(self.application.bot)
-            self.url_monitor.set_admin_chat_id(self.config.primary_admin_chat_id)
+            # No admin chat ID needed - alerts go to individual users
             
             # Start monitoring task
             monitoring_task = asyncio.create_task(self.url_monitor.start_monitoring())
@@ -94,7 +101,7 @@ class TelegramURLBot:
             
             # Start web server in a separate thread
             web_thread = self.web_server.run_server()
-            logger.info("Web server started on port 5555")
+            logger.info("Web server started on port 5000")
             
             # Initialize and start the bot
             await self.application.initialize()

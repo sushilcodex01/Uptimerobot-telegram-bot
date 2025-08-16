@@ -3,14 +3,13 @@
 This is an advanced Telegram bot application designed to monitor URL uptime and availability with a modern, interactive user interface. The bot provides keep-alive pings for websites, sends real-time status alerts, and features an enhanced UI with animations, progress indicators, and smart dashboards. It includes advanced features like predictive analytics planning, smart scheduling concepts, and comprehensive reporting capabilities. The bot is restricted to admin-only access and maintains persistent data storage for monitoring history and downtime incidents.
 
 ## Recent Enhancements (August 2025)
-- **Advanced UI System**: Complete redesign with modern interactive elements
-- **Animated Loading**: Progress bars and loading animations for better user experience  
-- **Smart Dashboard**: Real-time analytics with visual health indicators
-- **Enhanced Navigation**: Intuitive button-based interface with quick actions
-- **Per-Admin Data Isolation**: Complete separation of URL data between administrators (COMPLETED)
-- **Data Migration System**: Automatic migration from legacy shared data to per-admin structure
-- **Multi-Admin Security**: Each admin can only access their own monitored URLs and statistics
-- **Future-Ready Architecture**: Modular design supporting upcoming AI features
+- **Notion Database Integration**: Complete migration from JSON to Notion database storage (COMPLETED)
+- **Database Schema Setup**: Added required columns (user_id, url, status, added_at, last_check, response_time, username) (COMPLETED)
+- **Open Access**: Bot now available to all users, no admin restrictions (COMPLETED)
+- **Per-User Data Isolation**: Each user has their own data stored in Notion database
+- **Advanced UI System**: Modern interactive elements with progress indicators
+- **Real-time Monitoring**: Continuous URL monitoring with instant alerts
+- **Scalable Architecture**: Notion-based storage supports unlimited users
 - **Mobile-Optimized**: Responsive design optimized for mobile Telegram usage
 
 # User Preferences
@@ -31,27 +30,22 @@ The application follows a modular architecture with clear separation of concerns
 - **Utilities (`utils.py`)**: Common helper functions for URL validation and message formatting
 - **Future Features (`future_features.py`)**: Advanced features planned for future implementation including AI insights, predictive analytics, and integration hub
 
-## Authentication & Authorization
-The system implements a multi-admin access control model with hierarchical permissions:
-- **Primary Admin**: Main administrator (chat ID: 1691680798) with full management privileges
-- **Secondary Admins**: Additional users who can access all URL monitoring features
-- **Admin Management**: Primary admin can add/remove other administrators
-- **Persistent Admin Storage**: Admin list stored in `admin_data.json` for persistence
-- All bot commands require admin authentication
-- Non-admin users receive access denied messages
-
-### Admin Management Commands
-- `/addadmin <chat_id>` - Add new admin (Primary admin only)
-- `/removeadmin <chat_id>` - Remove admin (Primary admin only, cannot remove primary)
-- `/listadmins` - View all administrators (Primary admin only)
-- **Admin Panel**: Interactive button interface for admin management
+## User Access & Data Management
+The system now provides open access to all users with individual data isolation:
+- **Open Access**: Any Telegram user can use the bot
+- **Per-User Data**: Each user's URLs are stored separately in Notion database
+- **Data Privacy**: Users can only see and manage their own monitored URLs
+- **No Admin System**: Removed admin-only restrictions for broader accessibility
+- **Scalable Storage**: Notion database handles unlimited users and URLs
 
 ## Data Persistence Strategy
-The application uses JSON file-based storage for simplicity and portability:
-- Single JSON file stores all monitoring data
-- Tracks URL status, ping history, and downtime incidents
-- Automatic data file creation with default structure
-- Error recovery with fallback to default data structure
+The application uses Notion database for scalable and reliable storage:
+- **Notion Integration**: All data stored in structured Notion database
+- **User Isolation**: Each user's data is completely separate
+- **Real-time Updates**: Status changes are immediately reflected in Notion
+- **Scalable Storage**: Handles unlimited users and monitoring data
+- **API Integration**: Uses Notion API for all data operations
+- **Required Secrets**: NOTION_INTEGRATION_SECRET and NOTION_DATABASE_ID
 
 ## Monitoring Architecture
 The URL monitoring system operates on an asynchronous ping model:

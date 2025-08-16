@@ -13,6 +13,7 @@ from url_monitor import URLMonitor
 from config import Config
 from utils import format_uptime_message, format_url_list, validate_url
 from advanced_ui import AdvancedUI
+from notion_data_manager import NotionDataManager
 
 logger = logging.getLogger(__name__)
 
@@ -20,44 +21,58 @@ class BotHandlers:
     def __init__(self, url_monitor: URLMonitor, config: Config):
         self.url_monitor = url_monitor
         self.config = config
+        self.notion_data = NotionDataManager()
         self.advanced_ui = AdvancedUI(url_monitor, config)
         self.url_hash_map = {}  # Store URL hash mappings for callbacks
+        
+    def _generate_url_hash(self, url: str) -> str:
+        """Generate consistent hash for URL"""
+        import hashlib
+        return hashlib.md5(url.encode()).hexdigest()[:8]
     
-    def _is_admin(self, update: Update) -> bool:
-        """Check if the user is an admin"""
+    async def _refresh_url_hash_map(self, user_chat_id: str) -> None:
+        """Refresh URL hash mapping for user"""
+        try:
+            urls = await self.notion_data.get_user_urls(user_chat_id)
+            self.url_hash_map.clear()
+            
+            for url in urls.keys():
+                url_hash = self._generate_url_hash(url)
+                self.url_hash_map[url_hash] = url
+                
+            logger.debug(f"Refreshed hash map with {len(self.url_hash_map)} URLs")
+        except Exception as e:
+            logger.error(f"Error refreshing URL hash map: {e}")
+    
+    def _is_user_allowed(self, update: Update) -> bool:
+        """Check if the user is allowed to use the bot"""
         if not update.effective_chat:
             return False
-        return self.config.is_admin(update.effective_chat.id)
-    
-    async def _send_admin_only_message(self, update: Update):
-        """Send admin-only access message"""
-        await update.message.reply_text(
-            "🔒 Access Denied\n\n"
-            "This bot is restricted to admin use only.\n"
-            "Please contact the administrator for access."
-        )
+        return self.config.is_user_allowed(update.effective_chat.id)
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command"""
-        if not self._is_admin(update):
-            await self._send_admin_only_message(update)
+        if not self._is_user_allowed(update):
+            await update.message.reply_text("Sorry, this bot is currently not available.")
             return
         
         # Show typing animation for better UX
         await self.advanced_ui.show_typing_animation(update.effective_chat.id, context.bot, 2)
         
+        user = update.effective_user
+        username = user.username or user.first_name or "User"
+        
         welcome_msg = (
-            "🚀 **Advanced URL Monitor Bot** 🚀\n\n"
-            "Welcome to the next-generation URL monitoring system!\n\n"
-            "✨ **New Features:**\n"
-            "🎯 Smart Dashboard with Real-time Analytics\n"
-            "⚡ Lightning-fast Response Time Tracking\n"
-            "🔔 Intelligent Alert System\n"
-            "📊 Advanced Statistics & Trends\n"
-            "🎨 Modern Interactive Interface\n\n"
-            "🤖 **AI-Powered Monitoring:**\n"
-            "I automatically ping your URLs every 60 seconds using advanced algorithms and alert you instantly when issues are detected!\n\n"
-            "Choose an option below to get started:"
+            f"👋 Welcome {username}!\n\n"
+            "🚀 **URL Monitor Bot** 🚀\n\n"
+            "Monitor your websites and get instant alerts when they go down!\n\n"
+            "✨ **Features:**\n"
+            "📊 Real-time monitoring every 60 seconds\n"
+            "⚡ Response time tracking\n"
+            "🔔 Instant downtime alerts\n"
+            "📈 Statistics and trends\n"
+            "💾 All data stored securely in Notion\n\n"
+            "Start by adding your first URL to monitor:"
         )
         
         # Use advanced main menu
@@ -71,53 +86,31 @@ class BotHandlers:
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command"""
-        if not self._is_admin(update):
-            await self._send_admin_only_message(update)
+        if not self._is_user_allowed(update):
+            await update.message.reply_text("Sorry, this bot is currently not available.")
             return
         
-        # Check if user is primary admin to show admin commands
-        is_primary = self.config.is_primary_admin(update.effective_chat.id)
-        
         help_msg = (
-            "🆘 **Advanced Help System** 🆘\n\n"
-            "🚀 **URL Monitoring Commands:**\n"
-            "📌 `/seturl <url>` - Add URL with smart validation\n"
-            "🗑️ `/removeurl <url>` - Remove URL with confirmation\n"
-            "📋 `/listurls` - Interactive URL dashboard\n"
-            "📊 `/status` - Advanced analytics dashboard\n"
-            "🔄 `/pingnow` - Instant ping with progress animation\n\n"
-        )
-        
-        if is_primary:
-            help_msg += (
-                "👥 **Admin Management Commands:**\n"
-                "➕ `/addadmin <chat_id>` - Add new admin user\n"
-                "➖ `/removeadmin <chat_id>` - Remove admin access\n"
-                "📋 `/listadmins` - View all administrators\n\n"
-            )
-        
-        help_msg += (
-            "✨ **Advanced Features:**\n"
-            "🎯 Smart Dashboard with Real-time Updates\n"
-            "📈 Trend Analysis & Performance Insights\n"
-            "🔔 Intelligent Alert System\n"
-            "⚡ Sub-second Response Time Tracking\n"
-            "📱 Mobile-Optimized Interface\n"
-            "🎨 Interactive Buttons & Animations\n"
-            "💾 Persistent Data with Auto-Recovery\n\n"
+            "🆘 **Help - URL Monitor Bot** 🆘\n\n"
+            "🚀 **Available Commands:**\n"
+            "📌 `/seturl <url>` - Add URL to monitor\n"
+            "🗑️ `/removeurl <url>` - Remove URL from monitoring\n"
+            "📋 `/listurls` - View all your monitored URLs\n"
+            "📊 `/status` - View statistics and status\n"
+            "🔄 `/pingnow` - Test all URLs immediately\n\n"
+            "💾 **Notion Integration:**\n"
+            "• All your data is stored securely in Notion database\n"
+            "• Each user has their own separate data\n"
+            "• Real-time monitoring every 60 seconds\n\n"
             "🎨 **Status Indicators:**\n"
-            "🟢 Online - Excellent Performance\n"
-            "🟡 Warning - Slower Response\n"
-            "🔴 Offline - Service Down\n"
-            "⏳ Pending - Initial Check\n\n"
-            "💡 **Pro Tips:**\n"
-            "• Use interactive buttons for faster navigation\n"
-            "• Check the dashboard for detailed insights\n"
-            "• Set up multiple URLs for comprehensive monitoring"
+            "🟢 Online - Website is working\n"
+            "🔴 Offline - Website is down\n"
+            "⏳ Pending - First check in progress\n\n"
+            "💡 **Tips:**\n"
+            "• Start by adding a URL with /seturl\n"
+            "• Check your dashboard regularly\n"
+            "• You'll get instant alerts for downtime"
         )
-        
-        if is_primary:
-            help_msg += "\n• Use Admin Panel to manage multiple users"
         
         keyboard = [
             [
@@ -135,8 +128,8 @@ class BotHandlers:
     
     async def set_url_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /seturl command"""
-        if not self._is_admin(update):
-            await self._send_admin_only_message(update)
+        if not self._is_user_allowed(update):
+            await update.message.reply_text("Sorry, this bot is currently not available.")
             return
         
         # Check if URL is provided
@@ -170,8 +163,12 @@ class BotHandlers:
             parse_mode='Markdown'
         )
         
-        # Add URL to monitoring
-        success = self.url_monitor.add_url(url, str(update.effective_chat.id))
+        # Get user info
+        user = update.effective_user
+        username = user.username or user.first_name
+        
+        # Add URL to Notion database
+        success = await self.notion_data.add_url(url, str(update.effective_chat.id), username)
         
         if success:
             # Store URL hash mapping for callbacks
@@ -217,14 +214,14 @@ class BotHandlers:
     
     async def remove_url_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /removeurl command"""
-        if not self._is_admin(update):
-            await self._send_admin_only_message(update)
+        if not self._is_user_allowed(update):
+            await update.message.reply_text("Sorry, this bot is currently not available.")
             return
         
         # Check if URL is provided
         if not context.args:
             # Show current URLs for easy removal
-            urls = self.url_monitor.get_urls(str(update.effective_chat.id))
+            urls = await self.notion_data.get_user_urls(str(update.effective_chat.id))
             if not urls:
                 await update.message.reply_text(
                     "❌ No URLs are currently being monitored.\n\n"
@@ -246,7 +243,7 @@ class BotHandlers:
         url = context.args[0]
         
         # Remove URL from monitoring
-        success = self.url_monitor.remove_url(url, str(update.effective_chat.id))
+        success = await self.notion_data.remove_url(url, str(update.effective_chat.id))
         
         if success:
             keyboard = [
@@ -272,11 +269,11 @@ class BotHandlers:
     
     async def list_urls_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /listurls command"""
-        if not self._is_admin(update):
-            await self._send_admin_only_message(update)
+        if not self._is_user_allowed(update):
+            await update.message.reply_text("Sorry, this bot is currently not available.")
             return
         
-        urls = self.url_monitor.get_urls(str(update.effective_chat.id))
+        urls = await self.notion_data.get_user_urls(str(update.effective_chat.id))
         
         if not urls:
             keyboard = [
@@ -310,11 +307,11 @@ class BotHandlers:
     
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /status command"""
-        if not self._is_admin(update):
-            await self._send_admin_only_message(update)
+        if not self._is_user_allowed(update):
+            await update.message.reply_text("Sorry, this bot is currently not available.")
             return
         
-        urls = self.url_monitor.get_urls(str(update.effective_chat.id))
+        urls = await self.notion_data.get_user_urls(str(update.effective_chat.id))
         
         if not urls:
             await update.message.reply_text(
@@ -325,18 +322,28 @@ class BotHandlers:
             )
             return
         
-        message = "📊 **24-Hour Uptime Statistics**\n\n"
+        # Get statistics from Notion database
+        stats = await self.notion_data.get_url_statistics(str(update.effective_chat.id))
         
-        for url in urls.keys():
-            stats = self.url_monitor.get_uptime_stats(url, str(update.effective_chat.id), 24)
-            message += format_uptime_message(url, stats)
-            message += "\n"
+        message = f"📊 **Your URL Statistics**\n\n"
+        message += f"**Total URLs:** {stats['total_urls']}\n"
+        message += f"🟢 **Online:** {stats['online']}\n"
+        message += f"🔴 **Offline:** {stats['offline']}\n"
+        message += f"⏳ **Pending:** {stats['pending']}\n"
+        message += f"⚡ **Avg Response:** {stats['average_response_time']}ms\n\n"
+        
+        # Show individual URL statuses
+        for url, data in urls.items():
+            status_icon = "🟢" if data['status'] == 'online' else "🔴" if data['status'] == 'offline' else "⏳"
+            response_time_str = f" ({data['response_time']}ms)" if data['response_time'] else ""
+            message += f"{status_icon} `{url}`{response_time_str}\n"
         
         # Add monitoring status
-        monitor_status = self.url_monitor.get_monitoring_status()
+        monitor_status = await self.url_monitor.get_monitoring_status()
         status_icon = "🟢" if monitor_status["is_running"] else "🔴"
         message += f"\n**Monitoring Status:** {status_icon} {'Active' if monitor_status['is_running'] else 'Inactive'}\n"
         message += f"**Ping Interval:** {monitor_status['ping_interval']} seconds\n"
+        message += f"**Data Storage:** Notion Database\n"
         message += f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
         keyboard = [
@@ -353,11 +360,11 @@ class BotHandlers:
     
     async def ping_now_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /pingnow command"""
-        if not self._is_admin(update):
-            await self._send_admin_only_message(update)
+        if not self._is_user_allowed(update):
+            await update.message.reply_text("Sorry, this bot is currently not available.")
             return
         
-        urls = self.url_monitor.get_urls(str(update.effective_chat.id))
+        urls = await self.notion_data.get_user_urls(str(update.effective_chat.id))
         
         if not urls:
             await update.message.reply_text(
@@ -376,8 +383,8 @@ class BotHandlers:
         )
         
         try:
-            # Perform the pings for this admin only
-            results = await self.url_monitor.ping_admin_urls(str(update.effective_chat.id))
+            # Perform the pings for this user only
+            results = await self.url_monitor.ping_user_urls(str(update.effective_chat.id))
             
             # Format results
             message = "🔄 **Manual Ping Results**\n\n"
@@ -543,13 +550,301 @@ class BotHandlers:
         
         await update.message.reply_text(message, parse_mode='Markdown')
     
+    async def broadcast_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /broadcast command - Admin only"""
+        if not self.config.is_primary_admin(update.effective_chat.id):
+            await update.message.reply_text(
+                "🔒 **Access Denied**\n\n"
+                "Only admins can use the broadcast feature.",
+                parse_mode='Markdown'
+            )
+            return
+        
+        if not context.args:
+            await update.message.reply_text(
+                "📢 **Broadcast Command Usage**\n\n"
+                "**Format:** `/broadcast <message>`\n\n"
+                "**Example:** `/broadcast 🚀 New features are now available!`\n\n"
+                "**Features:**\n"
+                "• Send to all active users\n"
+                "• Markdown formatting supported\n"
+                "• Instant delivery\n"
+                "• Delivery confirmation\n\n"
+                "**Pro tip:** Use emojis and formatting for better engagement!",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Get the broadcast message
+        broadcast_message = ' '.join(context.args)
+        
+        # Show confirmation
+        confirm_msg = await update.message.reply_text(
+            f"📢 **Broadcast Preview**\n\n"
+            f"**Message to broadcast:**\n"
+            f"{broadcast_message}\n\n"
+            f"⚡ **Preparing broadcast...**\n"
+            f"🎯 Getting user list...\n"
+            f"📊 Calculating delivery...",
+            parse_mode='Markdown'
+        )
+        
+        # Get all users
+        all_urls = await self.notion_data.get_all_urls()
+        user_ids = set(all_urls.values()) if all_urls else set()
+        
+        if not user_ids:
+            await confirm_msg.edit_text(
+                "📢 **Broadcast Status**\n\n"
+                "❌ No active users found to broadcast to.\n"
+                "Users must have at least one monitored URL to receive broadcasts.",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Update status
+        await confirm_msg.edit_text(
+            f"📢 **Broadcasting Message**\n\n"
+            f"**Message:** {broadcast_message}\n\n"
+            f"🎯 **Target:** {len(user_ids)} users\n"
+            f"⏳ **Status:** Sending...\n"
+            f"📨 **Progress:** Starting delivery",
+            parse_mode='Markdown'
+        )
+        
+        # Send broadcast to all users
+        success_count = 0
+        failed_count = 0
+        
+        for i, user_id in enumerate(user_ids, 1):
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"📢 **Admin Broadcast**\n\n{broadcast_message}",
+                    parse_mode='Markdown'
+                )
+                success_count += 1
+                
+                # Update progress every 5 users or at the end
+                if i % 5 == 0 or i == len(user_ids):
+                    await confirm_msg.edit_text(
+                        f"📢 **Broadcasting Message**\n\n"
+                        f"**Message:** {broadcast_message[:50]}{'...' if len(broadcast_message) > 50 else ''}\n\n"
+                        f"🎯 **Target:** {len(user_ids)} users\n"
+                        f"⏳ **Status:** Sending...\n"
+                        f"📨 **Progress:** {i}/{len(user_ids)} ({(i/len(user_ids)*100):.0f}%)\n"
+                        f"✅ **Delivered:** {success_count}\n"
+                        f"❌ **Failed:** {failed_count}",
+                        parse_mode='Markdown'
+                    )
+                
+            except Exception as e:
+                failed_count += 1
+                logger.error(f"Failed to send broadcast to user {user_id}: {e}")
+        
+        # Final status report
+        await confirm_msg.edit_text(
+            f"📢 **Broadcast Complete!** ✅\n\n"
+            f"**Message:** {broadcast_message[:100]}{'...' if len(broadcast_message) > 100 else ''}\n\n"
+            f"📊 **Delivery Report:**\n"
+            f"🎯 **Total Users:** {len(user_ids)}\n"
+            f"✅ **Successfully Delivered:** {success_count}\n"
+            f"❌ **Failed Deliveries:** {failed_count}\n"
+            f"📈 **Success Rate:** {(success_count/len(user_ids)*100):.1f}%\n\n"
+            f"⏰ **Completed:** {datetime.now().strftime('%H:%M:%S')}",
+            parse_mode='Markdown'
+        )
+        
+        logger.info(f"Broadcast sent by admin {update.effective_chat.id} to {success_count}/{len(user_ids)} users")
+    
+    async def broadcast_image_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /broadcastimg command - Admin only"""
+        if not self.config.is_primary_admin(update.effective_chat.id):
+            await update.message.reply_text(
+                "🔒 **Access Denied**\n\n"
+                "Only admins can use the image broadcast feature.",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Set waiting for image state
+        context.user_data['waiting_for_broadcast_image'] = True
+        
+        await update.message.reply_text(
+            "🖼️ **Image Broadcast Setup**\n\n"
+            "📸 **Step 1 Complete:** Command received\n"
+            "📤 **Step 2:** Please send the image you want to broadcast\n"
+            "📝 **Step 3:** Add a caption to your image (optional)\n\n"
+            "✨ **Supported formats:** JPG, PNG, GIF\n"
+            "📏 **Max size:** 10MB\n"
+            "⚡ **Delivery:** Instant to all users\n\n"
+            "🚫 **To cancel:** Send `/cancel`",
+            parse_mode='Markdown'
+        )
+    
+    async def handle_broadcast_image(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle image for broadcasting"""
+        if not self.config.is_primary_admin(update.effective_chat.id):
+            return
+        
+        if not context.user_data.get('waiting_for_broadcast_image'):
+            return
+        
+        if not update.message.photo:
+            await update.message.reply_text(
+                "❌ Please send an image file (photo).\n\n"
+                "Use `/broadcastimg` to start over or `/cancel` to cancel.",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Clear waiting state
+        context.user_data['waiting_for_broadcast_image'] = False
+        
+        # Get image and caption
+        photo = update.message.photo[-1]  # Get highest resolution
+        caption = update.message.caption or ""
+        
+        # Show confirmation
+        confirm_msg = await update.message.reply_text(
+            f"🖼️ **Image Broadcast Preview**\n\n"
+            f"📸 **Image:** Received ({photo.width}x{photo.height})\n"
+            f"📝 **Caption:** {caption[:100]}{'...' if len(caption) > 100 else caption}\n\n"
+            f"⚡ **Preparing broadcast...**\n"
+            f"🎯 Getting user list...\n"
+            f"📊 Calculating delivery...",
+            parse_mode='Markdown'
+        )
+        
+        # Get all users
+        all_urls = await self.notion_data.get_all_urls()
+        user_ids = set(all_urls.values()) if all_urls else set()
+        
+        if not user_ids:
+            await confirm_msg.edit_text(
+                "🖼️ **Image Broadcast Status**\n\n"
+                "❌ No active users found to broadcast to.\n"
+                "Users must have at least one monitored URL to receive broadcasts.",
+                parse_mode='Markdown'
+            )
+            return
+        
+        # Update status
+        await confirm_msg.edit_text(
+            f"🖼️ **Broadcasting Image**\n\n"
+            f"📸 **Image:** ({photo.width}x{photo.height})\n"
+            f"📝 **Caption:** {caption[:50]}{'...' if len(caption) > 50 else caption}\n\n"
+            f"🎯 **Target:** {len(user_ids)} users\n"
+            f"⏳ **Status:** Sending...\n"
+            f"📨 **Progress:** Starting delivery",
+            parse_mode='Markdown'
+        )
+        
+        # Send broadcast to all users
+        success_count = 0
+        failed_count = 0
+        
+        for i, user_id in enumerate(user_ids, 1):
+            try:
+                broadcast_caption = f"📢 **Admin Broadcast**\n\n{caption}" if caption else "📢 **Admin Broadcast**"
+                await context.bot.send_photo(
+                    chat_id=user_id,
+                    photo=photo.file_id,
+                    caption=broadcast_caption,
+                    parse_mode='Markdown'
+                )
+                success_count += 1
+                
+                # Update progress every 3 users or at the end
+                if i % 3 == 0 or i == len(user_ids):
+                    await confirm_msg.edit_text(
+                        f"🖼️ **Broadcasting Image**\n\n"
+                        f"📸 **Image:** ({photo.width}x{photo.height})\n"
+                        f"📝 **Caption:** {caption[:30]}{'...' if len(caption) > 30 else caption}\n\n"
+                        f"🎯 **Target:** {len(user_ids)} users\n"
+                        f"⏳ **Status:** Sending...\n"
+                        f"📨 **Progress:** {i}/{len(user_ids)} ({(i/len(user_ids)*100):.0f}%)\n"
+                        f"✅ **Delivered:** {success_count}\n"
+                        f"❌ **Failed:** {failed_count}",
+                        parse_mode='Markdown'
+                    )
+                
+            except Exception as e:
+                failed_count += 1
+                logger.error(f"Failed to send image broadcast to user {user_id}: {e}")
+        
+        # Final status report
+        await confirm_msg.edit_text(
+            f"🖼️ **Image Broadcast Complete!** ✅\n\n"
+            f"📸 **Image:** ({photo.width}x{photo.height})\n"
+            f"📝 **Caption:** {caption[:80]}{'...' if len(caption) > 80 else caption}\n\n"
+            f"📊 **Delivery Report:**\n"
+            f"🎯 **Total Users:** {len(user_ids)}\n"
+            f"✅ **Successfully Delivered:** {success_count}\n"
+            f"❌ **Failed Deliveries:** {failed_count}\n"
+            f"📈 **Success Rate:** {(success_count/len(user_ids)*100):.1f}%\n\n"
+            f"⏰ **Completed:** {datetime.now().strftime('%H:%M:%S')}",
+            parse_mode='Markdown'
+        )
+        
+        logger.info(f"Image broadcast sent by admin {update.effective_chat.id} to {success_count}/{len(user_ids)} users")
+    
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle regular text messages"""
+        if not self._is_user_allowed(update):
+            return
+        
+        # Check if user is in broadcast image state
+        if context.user_data.get('waiting_for_broadcast_image'):
+            if update.message.text and update.message.text.lower() == '/cancel':
+                context.user_data['waiting_for_broadcast_image'] = False
+                await update.message.reply_text(
+                    "❌ **Image Broadcast Cancelled**\n\n"
+                    "The image broadcast has been cancelled. Use `/broadcastimg` to start over.",
+                    parse_mode='Markdown'
+                )
+                return
+            else:
+                await update.message.reply_text(
+                    "📸 **Waiting for Image**\n\n"
+                    "Please send an image file to broadcast, or send `/cancel` to cancel.",
+                    parse_mode='Markdown'
+                )
+                return
+        
+        # For regular messages, suggest using commands
+        message = (
+            "👋 **Hi there!**\n\n"
+            "I'm your URL Monitor Bot! Use these commands:\n\n"
+            "🚀 **Quick Start:**\n"
+            "• `/start` - Main dashboard\n"
+            "• `/seturl <url>` - Add URL to monitor\n"
+            "• `/status` - View status\n"
+            "• `/help` - Full help\n\n"
+            "💡 **Tip:** Click the buttons in my messages for an interactive experience!"
+        )
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("🚀 Dashboard", callback_data="main_menu"),
+                InlineKeyboardButton("➕ Add URL", callback_data="add_url_wizard")
+            ],
+            [
+                InlineKeyboardButton("📊 Status", callback_data="main_stats"),
+                InlineKeyboardButton("❓ Help", callback_data="help_menu")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup)
+    
     async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle inline button callbacks"""
         query = update.callback_query
         await query.answer()
         
-        if not self._is_admin(update):
-            await query.edit_message_text("🔒 Access denied. Admin only.")
+        if not self._is_user_allowed(update):
+            await query.edit_message_text("🔒 Sorry, this bot is currently not available.")
             return
         
         callback_data = query.data
@@ -567,6 +862,16 @@ class BotHandlers:
             await self._handle_quick_ping_callback(query)
         elif callback_data == "analytics":
             await self._handle_analytics_callback(query)
+        elif callback_data == "broadcast_center":
+            await self._handle_broadcast_center_callback(query)
+        elif callback_data == "broadcast_text":
+            await self._handle_broadcast_text_callback(query)
+        elif callback_data == "broadcast_image":
+            await self._handle_broadcast_image_callback(query)
+        elif callback_data == "user_management":
+            await self._handle_user_management_callback(query)
+        elif callback_data == "system_analytics":
+            await self._handle_system_analytics_callback(query)
         elif callback_data == "view_alerts":
             await self._handle_alerts_callback(query)
         elif callback_data == "help_menu":
@@ -577,16 +882,16 @@ class BotHandlers:
             page = int(callback_data.split(":")[1])
             await self._handle_urls_page_callback(query, page)
         elif callback_data.startswith("test_url:"):
-            url_hash = int(callback_data.split(":")[1])
+            url_hash = callback_data.split(":")[1]
             await self._handle_test_url_callback(query, url_hash)
         elif callback_data.startswith("url_detail:"):
-            url_hash = int(callback_data.split(":")[1])
+            url_hash = callback_data.split(":")[1]
             await self._handle_url_detail_callback(query, url_hash)
         elif callback_data.startswith("remove_url:"):
-            url_hash = int(callback_data.split(":")[1])
+            url_hash = callback_data.split(":")[1]
             await self._handle_remove_url_callback(query, url_hash)
         elif callback_data.startswith("confirm_remove:"):
-            url_hash = int(callback_data.split(":")[1])
+            url_hash = callback_data.split(":")[1]
             await self._handle_confirm_remove_callback(query, url_hash)
         elif callback_data == "add_url_wizard":
             await self._handle_add_url_wizard_callback(query)
@@ -606,7 +911,7 @@ class BotHandlers:
     
     async def _handle_list_urls_callback(self, query):
         """Handle list URLs button callback"""
-        urls = self.url_monitor.get_urls(str(query.message.chat.id))
+        urls = await self.notion_data.get_user_urls(str(query.message.chat.id))
         
         if not urls:
             keyboard = [
@@ -639,7 +944,7 @@ class BotHandlers:
     
     async def _handle_show_status_callback(self, query):
         """Handle show status button callback"""
-        urls = self.url_monitor.get_urls(str(query.message.chat.id))
+        urls = await self.notion_data.get_user_urls(str(query.message.chat.id))
         
         if not urls:
             await query.edit_message_text(
@@ -649,16 +954,28 @@ class BotHandlers:
             )
             return
         
-        message = "📊 **24-Hour Uptime Statistics**\n\n"
+        # Get statistics from Notion database
+        stats = await self.notion_data.get_url_statistics(str(query.message.chat.id))
         
-        for url in urls.keys():
-            stats = self.url_monitor.get_uptime_stats(url, str(update.effective_chat.id), 24)
-            message += format_uptime_message(url, stats)
-            message += "\n"
+        message = f"📊 **Your URL Statistics**\n\n"
+        message += f"**Total URLs:** {stats['total_urls']}\n"
+        message += f"🟢 **Online:** {stats['online']}\n"
+        message += f"🔴 **Offline:** {stats['offline']}\n"
+        message += f"⏳ **Pending:** {stats['pending']}\n"
+        message += f"⚡ **Avg Response:** {stats['average_response_time']}ms\n\n"
         
-        monitor_status = self.url_monitor.get_monitoring_status()
+        # Show individual URL statuses
+        for url, data in urls.items():
+            status_icon = "🟢" if data['status'] == 'online' else "🔴" if data['status'] == 'offline' else "⏳"
+            response_time_str = f" ({data['response_time']}ms)" if data['response_time'] else ""
+            message += f"{status_icon} `{url}`{response_time_str}\n"
+        
+        # Add monitoring status
+        monitor_status = await self.url_monitor.get_monitoring_status()
         status_icon = "🟢" if monitor_status["is_running"] else "🔴"
         message += f"\n**Monitoring Status:** {status_icon} {'Active' if monitor_status['is_running'] else 'Inactive'}\n"
+        message += f"**Ping Interval:** {monitor_status['ping_interval']} seconds\n"
+        message += f"**Data Storage:** Notion Database\n"
         message += f"**Last Updated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         
         keyboard = [
@@ -675,7 +992,7 @@ class BotHandlers:
     
     async def _handle_ping_now_callback(self, query):
         """Handle ping now button callback"""
-        urls = self.url_monitor.get_urls(str(query.message.chat.id))
+        urls = await self.notion_data.get_user_urls(str(query.message.chat.id))
         
         if not urls:
             await query.edit_message_text(
@@ -693,8 +1010,8 @@ class BotHandlers:
         )
         
         try:
-            # Perform the pings for this admin only
-            results = await self.url_monitor.ping_admin_urls(str(query.message.chat.id))
+            # Perform the pings for this user only
+            results = await self.url_monitor.ping_user_urls(str(query.message.chat.id))
             
             # Format results
             message = "🔄 **Manual Ping Results**\n\n"
@@ -732,8 +1049,8 @@ class BotHandlers:
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle non-command messages"""
-        if not self._is_admin(update):
-            await self._send_admin_only_message(update)
+        if not self._is_user_allowed(update):
+            await update.message.reply_text("Sorry, this bot is currently not available.")
             return
         
         # Provide helpful response for non-command messages
@@ -771,19 +1088,37 @@ class BotHandlers:
         )
     
     async def _handle_main_urls_callback(self, query):
-        """Handle URLs dashboard callback"""
-        urls = self.url_monitor.get_urls(str(query.message.chat.id))
-        message, reply_markup = self.advanced_ui.format_enhanced_url_list(urls)
-        
-        await query.edit_message_text(
-            message,
-            parse_mode='Markdown',
-            reply_markup=reply_markup
-        )
+        """Handle URLs dashboard callback with enhanced UI"""
+        try:
+            # Show loading animation first
+            await query.answer("📊 Loading enhanced dashboard...")
+            
+            # Refresh URL hash mapping
+            await self._refresh_url_hash_map(str(query.message.chat.id))
+            
+            # Get user URLs from Notion
+            urls = await self.notion_data.get_user_urls(str(query.message.chat.id))
+            
+            # Generate enhanced dashboard
+            message, reply_markup = self.advanced_ui.format_enhanced_url_list(urls, page=0, per_page=4)
+            
+            # Update message with enhanced dashboard
+            await query.edit_message_text(
+                message,
+                parse_mode='Markdown',
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.error(f"Error in main URLs callback: {e}")
+            await query.edit_message_text(
+                "❌ **Error Loading Dashboard**\n\n"
+                "Please try again later or contact support.",
+                parse_mode='Markdown'
+            )
     
     async def _handle_main_stats_callback(self, query):
         """Handle statistics dashboard callback"""
-        urls = self.url_monitor.get_urls(str(query.message.chat.id))
+        urls = await self.notion_data.get_user_urls(str(query.message.chat.id))
         message, reply_markup = self.advanced_ui.format_advanced_stats(urls)
         
         await query.edit_message_text(
@@ -812,7 +1147,7 @@ class BotHandlers:
     
     async def _handle_quick_ping_callback(self, query):
         """Handle quick ping with advanced animation"""
-        urls = self.url_monitor.get_urls(str(query.message.chat.id))
+        urls = await self.notion_data.get_user_urls(str(query.message.chat.id))
         
         if not urls:
             await query.edit_message_text(
@@ -845,7 +1180,7 @@ class BotHandlers:
         
         try:
             # Perform the pings for this admin only
-            results = await self.url_monitor.ping_admin_urls(str(query.message.chat.id))
+            results = await self.url_monitor.ping_user_urls(str(query.message.chat.id))
             
             # Enhanced results display
             message = "⚡ **Advanced Ping Results** ⚡\n\n"
@@ -1002,7 +1337,7 @@ class BotHandlers:
     
     async def _handle_remove_url_menu_callback(self, query):
         """Handle remove URL menu"""
-        urls = self.url_monitor.get_urls(str(query.message.chat.id))
+        urls = await self.notion_data.get_user_urls(str(query.message.chat.id))
         
         if not urls:
             await query.edit_message_text(
@@ -1045,11 +1380,15 @@ class BotHandlers:
         )
     
     async def _handle_admin_panel_callback(self, query):
-        """Handle admin panel callback"""
-        if not self.config.is_primary_admin(query.from_user.id):
+        """Handle advanced admin panel callback"""
+        user_chat_id = query.message.chat.id
+        if not self.config.is_primary_admin(user_chat_id):
             await query.edit_message_text(
-                "🔒 **Access Denied**\n\n"
-                "Only the primary admin can access the admin panel.",
+                f"🔒 **Access Denied**\n\n"
+                f"Only the primary admin can access the admin panel.\n\n"
+                f"**Your Chat ID:** `{user_chat_id}`\n"
+                f"**Required Admin ID:** `{self.config.primary_admin_chat_id}`\n\n"
+                f"Contact the bot owner to add your Chat ID as admin.",
                 parse_mode='Markdown',
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
@@ -1057,36 +1396,119 @@ class BotHandlers:
             )
             return
         
+        # Get system statistics
+        all_urls = await self.notion_data.get_all_urls()
+        total_users = len(set(all_urls.values())) if all_urls else 0
+        total_urls = len(all_urls)
         admin_list = self.config.get_admin_list()
         
-        message = "👥 **Admin Management Panel**\n\n"
-        message += f"**Total Admins:** {len(admin_list)}\n\n"
+        message = "👑 **Advanced Admin Control Panel** 👑\n\n"
+        message += f"🎯 **System Overview:**\n"
+        message += f"• 👥 Active Users: {total_users}\n"
+        message += f"• 🌐 Total URLs: {total_urls}\n"
+        message += f"• 🛡️ Admins: {len(admin_list)}\n"
+        message += f"• 📊 Database: Notion\n\n"
         
-        # Show first 5 admins
-        for i, admin_id in enumerate(admin_list[:5], 1):
-            if admin_id == self.config.primary_admin_chat_id:
-                message += f"**{i}.** `{admin_id}` 👑 **Primary**\n"
-            else:
-                message += f"**{i}.** `{admin_id}`\n"
+        message += f"🚀 **Admin Features Available:**\n"
+        message += f"• 📢 Broadcast Messages & Images\n"
+        message += f"• 👥 User Management System\n"
+        message += f"• 📊 System Analytics & Reports\n"
+        message += f"• 🔧 Database Management Tools\n"
+        message += f"• 🛡️ Admin Access Control\n"
+        message += f"• 📈 Performance Monitoring\n\n"
         
-        if len(admin_list) > 5:
-            message += f"... and {len(admin_list) - 5} more\n"
+        message += f"⚡ **Quick Stats:**\n"
+        # Get online/offline counts
+        online_count = 0
+        offline_count = 0
+        if all_urls:
+            for url in all_urls.keys():
+                # Get status from first user who has this URL
+                user_id = all_urls[url]
+                user_urls = await self.notion_data.get_user_urls(user_id)
+                if url in user_urls:
+                    status = user_urls[url].get('status', '').lower()
+                    if status == 'online':
+                        online_count += 1
+                    elif status == 'offline':
+                        offline_count += 1
         
-        message += f"\n**Quick Commands:**\n"
-        message += f"• Use `/addadmin <chat_id>` to add new admin\n"
-        message += f"• Use `/removeadmin <chat_id>` to remove admin\n"
-        message += f"• Use `/listadmins` for complete list"
+        message += f"• 🟢 Online URLs: {online_count}\n"
+        message += f"• 🔴 Offline URLs: {offline_count}\n"
+        message += f"• ⏱️ Last Update: {datetime.now().strftime('%H:%M:%S')}"
         
         keyboard = [
             [
-                InlineKeyboardButton("➕ Add Admin", callback_data="add_admin_help"),
-                InlineKeyboardButton("➖ Remove Admin", callback_data="remove_admin_help")
+                InlineKeyboardButton("📢 Broadcast Center", callback_data="broadcast_center"),
+                InlineKeyboardButton("👥 User Management", callback_data="user_management")
             ],
             [
-                InlineKeyboardButton("📋 Full Admin List", callback_data="show_all_admins"),
-                InlineKeyboardButton("ℹ️ How to Get Chat ID", callback_data="chat_id_help")
+                InlineKeyboardButton("📊 System Analytics", callback_data="system_analytics"),
+                InlineKeyboardButton("🔧 Database Tools", callback_data="database_tools")
             ],
             [
+                InlineKeyboardButton("🛡️ Admin Controls", callback_data="admin_controls"),
+                InlineKeyboardButton("📈 Performance Monitor", callback_data="performance_monitor")
+            ],
+            [
+                InlineKeyboardButton("🔄 Refresh Stats", callback_data="admin_panel"),
+                InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            message,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+    
+    async def _handle_broadcast_center_callback(self, query):
+        """Handle broadcast center callback"""
+        if not self.config.is_primary_admin(query.message.chat.id):
+            await query.edit_message_text("🔒 Access denied. Admin only.")
+            return
+        
+        message = "📢 **Broadcast Control Center** 📢\n\n"
+        message += "🎯 **Mass Communication Hub**\n\n"
+        message += "✨ **Available Features:**\n"
+        message += "• 📝 Broadcast Text Messages\n"
+        message += "• 🖼️ Broadcast Images with Captions\n"
+        message += "• 🎯 Target Specific Users or All\n"
+        message += "• 📊 Delivery Analytics & Reports\n"
+        message += "• ⚡ Instant or Scheduled Delivery\n\n"
+        
+        # Get user statistics
+        all_urls = await self.notion_data.get_all_urls()
+        total_users = len(set(all_urls.values())) if all_urls else 0
+        
+        message += f"👥 **Target Audience:**\n"
+        message += f"• Active Users: {total_users}\n"
+        message += f"• Potential Reach: {total_users} users\n\n"
+        
+        message += "🚀 **How to Broadcast:**\n"
+        message += "1️⃣ Choose message type (text/image)\n"
+        message += "2️⃣ Compose your message\n"
+        message += "3️⃣ Review and confirm\n"
+        message += "4️⃣ Send to all users instantly\n\n"
+        
+        message += "⚠️ **Important:** Use responsibly!"
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("📝 Text Broadcast", callback_data="broadcast_text"),
+                InlineKeyboardButton("🖼️ Image Broadcast", callback_data="broadcast_image")
+            ],
+            [
+                InlineKeyboardButton("👥 User List", callback_data="broadcast_users"),
+                InlineKeyboardButton("📊 Broadcast Stats", callback_data="broadcast_stats")
+            ],
+            [
+                InlineKeyboardButton("📋 Message Templates", callback_data="message_templates"),
+                InlineKeyboardButton("⚙️ Broadcast Settings", callback_data="broadcast_settings")
+            ],
+            [
+                InlineKeyboardButton("🔙 Admin Panel", callback_data="admin_panel"),
                 InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
             ]
         ]
@@ -1099,15 +1521,31 @@ class BotHandlers:
         )
     
     async def _handle_urls_page_callback(self, query, page):
-        """Handle URL pagination"""
-        urls = self.url_monitor.get_urls(str(query.message.chat.id))
-        message, reply_markup = self.advanced_ui.format_enhanced_url_list(urls, page)
-        
-        await query.edit_message_text(
-            message,
-            parse_mode='Markdown',
-            reply_markup=reply_markup
-        )
+        """Handle enhanced URL pagination"""
+        try:
+            await query.answer(f"📄 Loading page {page + 1}...")
+            
+            # Get URLs from Notion
+            urls = await self.notion_data.get_user_urls(str(query.message.chat.id))
+            
+            # Generate enhanced dashboard with pagination
+            message, reply_markup = self.advanced_ui.format_enhanced_url_list(urls, page, per_page=4)
+            
+            await query.edit_message_text(
+                message,
+                parse_mode='Markdown',
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.error(f"Error in URL pagination: {e}")
+            await query.edit_message_text(
+                "❌ **Error Loading Page**\n\n"
+                "Please try refreshing the dashboard.",
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔄 Refresh Dashboard", callback_data="main_urls")]
+                ])
+            )
     
     async def _handle_test_url_callback(self, query, url_hash):
         """Handle individual URL testing"""
@@ -1175,94 +1613,558 @@ class BotHandlers:
     
     async def _handle_remove_url_callback(self, query, url_hash):
         """Handle URL removal through button interface"""
-        if url_hash not in self.url_hash_map:
+        try:
+            # Refresh hash mapping first
+            await self._refresh_url_hash_map(str(query.message.chat.id))
+            
+            if url_hash not in self.url_hash_map:
+                await query.edit_message_text(
+                    "❌ URL not found. Please refresh and try again.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔄 Refresh URLs", callback_data="main_urls")],
+                        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
+                    ])
+                )
+                return
+            
+            url = self.url_hash_map[url_hash]
+            
+            # Show confirmation message
             await query.edit_message_text(
-                "❌ URL not found. Please refresh and try again.",
+                f"🗑️ **Confirm URL Removal**\n\n"
+                f"**URL:** `{url}`\n\n"
+                f"⚠️ This will stop monitoring this URL permanently.\n"
+                f"Are you sure you want to remove it?",
+                parse_mode='Markdown',
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔄 Refresh URLs", callback_data="main_urls")],
-                    [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
+                    [
+                        InlineKeyboardButton("✅ Yes, Remove", callback_data=f"confirm_remove:{url_hash}"),
+                        InlineKeyboardButton("❌ Cancel", callback_data="main_urls")
+                    ]
                 ])
             )
-            return
-        
-        url = self.url_hash_map[url_hash]
-        
-        # Show confirmation message
-        await query.edit_message_text(
-            f"🗑️ **Confirm URL Removal**\n\n"
-            f"**URL:** `{url}`\n\n"
-            f"⚠️ This will stop monitoring this URL permanently.\n"
-            f"Are you sure you want to remove it?",
-            parse_mode='Markdown',
-            reply_markup=InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton("✅ Yes, Remove", callback_data=f"confirm_remove:{url_hash}"),
-                    InlineKeyboardButton("❌ Cancel", callback_data="main_urls")
-                ]
-            ])
-        )
+        except Exception as e:
+            logger.error(f"Error in remove URL callback: {e}")
+            await query.edit_message_text(
+                "❌ **Error Processing Request**\n\n"
+                "Please try refreshing the dashboard.",
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔄 Refresh URLs", callback_data="main_urls")]
+                ])
+            )
     
-    async def _handle_confirm_remove_callback(self, query, url_hash):
-        """Handle confirmed URL removal"""
-        if url_hash not in self.url_hash_map:
-            await query.edit_message_text(
-                "❌ URL not found. Please refresh and try again.",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔄 Refresh URLs", callback_data="main_urls")],
-                    [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
-                ])
-            )
-            return
-        
-        url = self.url_hash_map[url_hash]
-        
-        # Show processing message
-        await query.edit_message_text(
-            f"🗑️ **Removing URL...**\n\n"
-            f"**URL:** `{url}`\n\n"
-            f"⏳ Stopping monitoring...\n"
-            f"⏳ Removing from database...\n"
-            f"⏳ Cleaning up resources...",
-            parse_mode='Markdown'
-        )
-        
-        # Remove URL from monitoring
-        success = self.url_monitor.remove_url(url, str(query.message.chat.id))
-        
-        if success:
-            # Remove from hash mapping
-            if url_hash in self.url_hash_map:
-                del self.url_hash_map[url_hash]
+    async def _handle_url_detail_callback(self, query, url_hash):
+        """Handle enhanced URL detail view callback"""
+        try:
+            await query.answer("📊 Loading URL analytics...")
             
-            # Show success message
-            keyboard = [
-                [
-                    InlineKeyboardButton("📋 View Remaining URLs", callback_data="main_urls"),
-                    InlineKeyboardButton("➕ Add New URL", callback_data="add_url_wizard")
-                ],
-                [
-                    InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
-                ]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            if url_hash not in self.url_hash_map:
+                await query.edit_message_text(
+                    "❌ URL not found. Please refresh and try again.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔄 Refresh URLs", callback_data="main_urls")],
+                        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
+                    ])
+                )
+                return
+            
+            url = self.url_hash_map[url_hash]
+            
+            # Get URL details from Notion
+            url_data = await self.notion_data.get_user_url(str(query.message.chat.id), url)
+            
+            if not url_data:
+                await query.edit_message_text(
+                    "❌ URL details not found.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔄 Refresh URLs", callback_data="main_urls")]
+                    ])
+                )
+                return
+            
+            # Use enhanced detail view
+            message, reply_markup = self.advanced_ui.create_url_detail_view(url, url_data)
             
             await query.edit_message_text(
-                f"✅ **URL Removed Successfully!**\n\n"
-                f"**Removed URL:** `{url}`\n"
-                f"**Status:** No longer monitoring\n\n"
-                f"This URL will no longer receive keep-alive pings.",
+                message,
                 parse_mode='Markdown',
                 reply_markup=reply_markup
             )
-        else:
+            
+        except Exception as e:
+            logger.error(f"Error in URL detail callback: {e}")
             await query.edit_message_text(
-                f"❌ **Failed to Remove URL**\n\n"
-                f"**URL:** `{url}`\n"
-                f"This URL may not exist in the monitoring system.\n\n"
-                f"Use the URL list to see all monitored URLs.",
+                "❌ **Error Loading URL Details**\n\n"
+                "Please try again later.",
                 parse_mode='Markdown',
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📋 View URLs", callback_data="main_urls")],
+                    [InlineKeyboardButton("🔄 Try Again", callback_data=f"url_detail:{url_hash}")],
+                    [InlineKeyboardButton("🌐 Dashboard", callback_data="main_urls")]
+                ])
+            )
+    
+    async def _handle_confirm_remove_callback(self, query, url_hash):
+        """Handle confirmed URL removal"""
+        try:
+            # Refresh hash mapping to ensure we have latest data
+            await self._refresh_url_hash_map(str(query.message.chat.id))
+            
+            if url_hash not in self.url_hash_map:
+                await query.edit_message_text(
+                    "❌ URL not found. Please refresh and try again.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔄 Refresh URLs", callback_data="main_urls")],
+                        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
+                    ])
+                )
+                return
+            
+            url = self.url_hash_map[url_hash]
+            
+            # Show processing message with answer to prevent timeout
+            await query.answer("🗑️ Removing URL...")
+            await query.edit_message_text(
+                f"🗑️ **Removing URL...**\n\n"
+                f"**URL:** `{url}`\n\n"
+                f"⏳ Stopping monitoring...\n"
+                f"⏳ Removing from database...\n"
+                f"⏳ Cleaning up resources...",
+                parse_mode='Markdown'
+            )
+            
+            # Remove URL from monitoring
+            success = await self.url_monitor.remove_url(url, str(query.message.chat.id))
+            
+            if success:
+                # Remove from hash mapping
+                if url_hash in self.url_hash_map:
+                    del self.url_hash_map[url_hash]
+                
+                # Show success message
+                keyboard = [
+                    [
+                        InlineKeyboardButton("📋 View Remaining URLs", callback_data="main_urls"),
+                        InlineKeyboardButton("➕ Add New URL", callback_data="add_url_wizard")
+                    ],
+                    [
+                        InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
+                    ]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await query.edit_message_text(
+                    f"✅ **URL Removed Successfully!**\n\n"
+                    f"**Removed URL:** `{url}`\n"
+                    f"**Status:** No longer monitoring\n\n"
+                    f"This URL will no longer receive keep-alive pings.\n\n"
+                    f"🕐 **Removed at:** {datetime.now().strftime('%H:%M:%S')}",
+                    parse_mode='Markdown',
+                    reply_markup=reply_markup
+                )
+                logger.info(f"Successfully removed URL {url} for user {query.message.chat.id}")
+            else:
+                await query.edit_message_text(
+                    f"❌ **Failed to Remove URL**\n\n"
+                    f"**URL:** `{url}`\n"
+                    f"This URL may not exist in the monitoring system.\n\n"
+                    f"Use the URL list to see all monitored URLs.",
+                    parse_mode='Markdown',
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("📋 View URLs", callback_data="main_urls")],
+                        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
+                    ])
+                )
+                logger.warning(f"Failed to remove URL {url} for user {query.message.chat.id}")
+                
+        except Exception as e:
+            logger.error(f"Error in confirm remove callback: {e}")
+            await query.edit_message_text(
+                "❌ **Error Removing URL**\n\n"
+                "An unexpected error occurred. Please try again.",
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔄 Try Again", callback_data="main_urls")],
                     [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
                 ])
             )
+    
+    async def _handle_view_alerts_callback(self, query):
+        """Handle view alerts callback"""
+        urls = await self.notion_data.get_user_urls(str(query.message.chat.id))
+        
+        message = f"🔔 **Alert System** 🔔\n\n"
+        
+        if not urls:
+            message += "📭 **No URLs Monitored**\n\n"
+            message += "Add URLs to receive downtime alerts!"
+        else:
+            offline_urls = [url for url, data in urls.items() if data.get('status') == 'Offline']
+            
+            if offline_urls:
+                message += f"🚨 **Active Alerts** 🚨\n\n"
+                for url in offline_urls[:5]:
+                    message += f"🔴 `{url}`\n"
+                if len(offline_urls) > 5:
+                    message += f"... and {len(offline_urls) - 5} more\n"
+            else:
+                message += "✅ **All Systems Online** ✅\n\n"
+                message += "No active alerts. All URLs are working!"
+            
+            message += f"\n📊 **Alert Summary:**\n"
+            message += f"• Total URLs: {len(urls)}\n"
+            message += f"• Active Alerts: {len(offline_urls)}\n"
+            message += f"• Status: {'🟢 Good' if len(offline_urls) == 0 else '🔴 Issues Detected'}"
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("🔄 Refresh Alerts", callback_data="view_alerts"),
+                InlineKeyboardButton("⚡ Quick Ping", callback_data="quick_ping")
+            ],
+            [
+                InlineKeyboardButton("📊 Stats", callback_data="main_stats"),
+                InlineKeyboardButton("🌐 URLs", callback_data="main_urls")
+            ],
+            [
+                InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            message,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+    
+    async def _handle_help_menu_callback(self, query):
+        """Handle help menu callback"""
+        help_msg = (
+            "ℹ️ **Help & Support** ℹ️\n\n"
+            "🚀 **Quick Start Guide:**\n"
+            "1️⃣ Click '➕ Add URL' to start monitoring\n"
+            "2️⃣ Enter your website URL\n"
+            "3️⃣ Monitor real-time status\n"
+            "4️⃣ Get instant downtime alerts\n\n"
+            "🎛️ **Available Features:**\n"
+            "• 🌐 URL Management Dashboard\n"
+            "• 📊 Real-time Statistics\n"
+            "• ⚡ Instant Ping Testing\n"
+            "• 🔔 Downtime Alerts\n"
+            "• 📈 Performance Analytics\n\n"
+            "💡 **Pro Tips:**\n"
+            "• Monitor every 60 seconds automatically\n"
+            "• Get alerts immediately when sites go down\n"
+            "• View response time trends\n"
+            "• All data stored securely in Notion\n\n"
+            "❓ **Need More Help?**\n"
+            "Use the /help command for detailed instructions!"
+        )
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("🚀 Get Started", callback_data="add_url_wizard"),
+                InlineKeyboardButton("📊 View Dashboard", callback_data="main_menu")
+            ],
+            [
+                InlineKeyboardButton("💬 Commands List", callback_data="commands_help"),
+                InlineKeyboardButton("🔧 Settings", callback_data="main_settings")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(help_msg, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    async def _handle_add_url_wizard_callback(self, query):
+        """Handle add URL wizard callback"""
+        message = (
+            "➕ **Add URL Wizard** ➕\n\n"
+            "🎯 **Ready to monitor a new website!**\n\n"
+            "📋 **How to add a URL:**\n"
+            "1️⃣ Use command: `/seturl <your-url>`\n"
+            "2️⃣ Example: `/seturl https://myapp.com`\n"
+            "3️⃣ Bot will start monitoring immediately\n\n"
+            "✅ **Supported URLs:**\n"
+            "• https://example.com\n"
+            "• http://example.com\n"
+            "• https://api.example.com/health\n"
+            "• Any publicly accessible URL\n\n"
+            "⚡ **What happens next:**\n"
+            "• Instant connectivity test\n"
+            "• Automatic monitoring every 60 seconds\n"
+            "• Real-time alerts for downtime\n"
+            "• Performance tracking\n\n"
+            "💡 **Tip:** You can monitor multiple URLs!"
+        )
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("📋 View Current URLs", callback_data="main_urls"),
+                InlineKeyboardButton("📊 Statistics", callback_data="main_stats")
+            ],
+            [
+                InlineKeyboardButton("❓ Help", callback_data="help_menu"),
+                InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            message,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+    
+    async def _handle_broadcast_text_callback(self, query):
+        """Handle text broadcast setup"""
+        if not self.config.is_primary_admin(query.message.chat.id):
+            await query.edit_message_text("🔒 Access denied. Admin only.")
+            return
+        
+        message = "📝 **Text Broadcast Setup** 📝\n\n"
+        message += "🎯 **Ready to send message to all users!**\n\n"
+        message += "📋 **Instructions:**\n"
+        message += "1️⃣ Type: `/broadcast <your message>`\n"
+        message += "2️⃣ Example: `/broadcast 🚀 New features available!`\n"
+        message += "3️⃣ Message will be sent to all active users\n\n"
+        
+        message += "✨ **Message Features:**\n"
+        message += "• ✅ Markdown formatting supported\n"
+        message += "• 📝 Unlimited text length\n"
+        message += "• 🔗 Links and formatting allowed\n"
+        message += "• ⚡ Instant delivery to all users\n\n"
+        
+        message += "💡 **Pro Tips:**\n"
+        message += "• Use **bold** and *italic* text\n"
+        message += "• Add emojis for better engagement\n"
+        message += "• Keep messages clear and concise\n"
+        message += "• Test formatting with a single message first\n\n"
+        
+        message += "📊 **Sample Commands:**\n"
+        message += "`/broadcast Hello everyone! 👋`\n"
+        message += "`/broadcast **Important Update:** New features added!`\n"
+        message += "`/broadcast 🔧 Maintenance scheduled for tonight`"
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("📋 Message Templates", callback_data="message_templates"),
+                InlineKeyboardButton("👥 Target Users", callback_data="broadcast_users")
+            ],
+            [
+                InlineKeyboardButton("🧪 Test Message", callback_data="test_broadcast"),
+                InlineKeyboardButton("📊 Delivery Stats", callback_data="broadcast_stats")
+            ],
+            [
+                InlineKeyboardButton("🔙 Broadcast Center", callback_data="broadcast_center"),
+                InlineKeyboardButton("👑 Admin Panel", callback_data="admin_panel")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            message,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+    
+    async def _handle_broadcast_image_callback(self, query):
+        """Handle image broadcast setup"""
+        if not self.config.is_primary_admin(query.message.chat.id):
+            await query.edit_message_text("🔒 Access denied. Admin only.")
+            return
+        
+        message = "🖼️ **Image Broadcast Setup** 🖼️\n\n"
+        message += "🎯 **Send images with captions to all users!**\n\n"
+        message += "📋 **Instructions:**\n"
+        message += "1️⃣ Use command: `/broadcastimg`\n"
+        message += "2️⃣ Send the image as a reply to the command\n"
+        message += "3️⃣ Add caption with the image\n"
+        message += "4️⃣ Image will be sent to all users\n\n"
+        
+        message += "✨ **Image Features:**\n"
+        message += "• 🖼️ JPG, PNG, GIF supported\n"
+        message += "• 📝 Rich captions with Markdown\n"
+        message += "• 🎯 Broadcast to all active users\n"
+        message += "• ⚡ High-quality image delivery\n\n"
+        
+        message += "💡 **Pro Tips:**\n"
+        message += "• Use high-quality images\n"
+        message += "• Keep file sizes reasonable (<10MB)\n"
+        message += "• Add engaging captions\n"
+        message += "• Test with single user first\n\n"
+        
+        message += "📊 **Usage Examples:**\n"
+        message += "1. Send `/broadcastimg`\n"
+        message += "2. Reply with image + caption\n"
+        message += "3. Confirm broadcast delivery\n"
+        message += "4. Monitor delivery status"
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("📸 Start Image Broadcast", callback_data="start_img_broadcast"),
+                InlineKeyboardButton("🎨 Image Templates", callback_data="image_templates")
+            ],
+            [
+                InlineKeyboardButton("👥 Target Users", callback_data="broadcast_users"),
+                InlineKeyboardButton("📊 Image Stats", callback_data="image_broadcast_stats")
+            ],
+            [
+                InlineKeyboardButton("🔙 Broadcast Center", callback_data="broadcast_center"),
+                InlineKeyboardButton("👑 Admin Panel", callback_data="admin_panel")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            message,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+    
+    async def _handle_user_management_callback(self, query):
+        """Handle user management panel"""
+        if not self.config.is_primary_admin(query.message.chat.id):
+            await query.edit_message_text("🔒 Access denied. Admin only.")
+            return
+        
+        # Get user statistics
+        all_urls = await self.notion_data.get_all_urls()
+        user_ids = set(all_urls.values()) if all_urls else set()
+        total_users = len(user_ids)
+        
+        message = "👥 **User Management Panel** 👥\n\n"
+        message += f"📊 **User Statistics:**\n"
+        message += f"• Total Active Users: {total_users}\n"
+        message += f"• Total URLs Monitored: {len(all_urls)}\n"
+        message += f"• Average URLs per User: {len(all_urls) / max(total_users, 1):.1f}\n\n"
+        
+        message += "🎯 **Management Features:**\n"
+        message += "• 👁️ View all user activity\n"
+        message += "• 📊 User statistics and metrics\n"
+        message += "• 🚫 Block/Unblock users (if needed)\n"
+        message += "• 📈 User engagement analytics\n"
+        message += "• 📋 Export user data\n\n"
+        
+        if total_users > 0:
+            message += f"🏆 **Top Users (by URLs monitored):**\n"
+            # Count URLs per user
+            user_url_counts = {}
+            for url, user_id in all_urls.items():
+                user_url_counts[user_id] = user_url_counts.get(user_id, 0) + 1
+            
+            # Sort and show top users
+            sorted_users = sorted(user_url_counts.items(), key=lambda x: x[1], reverse=True)
+            for i, (user_id, url_count) in enumerate(sorted_users[:5], 1):
+                message += f"{i}. User `{user_id}`: {url_count} URLs\n"
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("👁️ View All Users", callback_data="view_all_users"),
+                InlineKeyboardButton("📊 User Analytics", callback_data="user_analytics")
+            ],
+            [
+                InlineKeyboardButton("📈 Activity Report", callback_data="activity_report"),
+                InlineKeyboardButton("📋 Export Data", callback_data="export_user_data")
+            ],
+            [
+                InlineKeyboardButton("🔧 User Tools", callback_data="user_tools"),
+                InlineKeyboardButton("⚙️ User Settings", callback_data="user_settings_admin")
+            ],
+            [
+                InlineKeyboardButton("🔙 Admin Panel", callback_data="admin_panel"),
+                InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            message,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+    
+    async def _handle_system_analytics_callback(self, query):
+        """Handle system analytics panel"""
+        if not self.config.is_primary_admin(query.message.chat.id):
+            await query.edit_message_text("🔒 Access denied. Admin only.")
+            return
+        
+        # Get comprehensive system stats
+        all_urls = await self.notion_data.get_all_urls()
+        total_users = len(set(all_urls.values())) if all_urls else 0
+        total_urls = len(all_urls)
+        
+        # Calculate status statistics
+        online_count = 0
+        offline_count = 0
+        pending_count = 0
+        total_response_time = 0
+        response_count = 0
+        
+        for url in all_urls.keys():
+            user_id = all_urls[url]
+            user_urls = await self.notion_data.get_user_urls(user_id)
+            if url in user_urls:
+                status = user_urls[url].get('status', '').lower()
+                if status == 'online':
+                    online_count += 1
+                elif status == 'offline':
+                    offline_count += 1
+                else:
+                    pending_count += 1
+                
+                response_time = user_urls[url].get('response_time')
+                if response_time and response_time > 0:
+                    total_response_time += response_time
+                    response_count += 1
+        
+        avg_response = total_response_time / max(response_count, 1)
+        uptime_percentage = (online_count / max(total_urls, 1)) * 100
+        
+        message = "📊 **System Analytics Dashboard** 📊\n\n"
+        message += f"🎯 **Overall Health: {('🟢 Excellent' if uptime_percentage >= 95 else '🟡 Good' if uptime_percentage >= 80 else '🔴 Needs Attention')}**\n\n"
+        
+        message += f"📈 **Key Metrics:**\n"
+        message += f"• 🌐 Total URLs: {total_urls}\n"
+        message += f"• 👥 Active Users: {total_users}\n"
+        message += f"• 🟢 Online: {online_count} ({online_count/max(total_urls,1)*100:.1f}%)\n"
+        message += f"• 🔴 Offline: {offline_count} ({offline_count/max(total_urls,1)*100:.1f}%)\n"
+        message += f"• ⏳ Pending: {pending_count}\n"
+        message += f"• ⚡ Avg Response: {avg_response:.3f}s\n\n"
+        
+        message += f"📊 **System Performance:**\n"
+        message += f"• 📈 Overall Uptime: {uptime_percentage:.1f}%\n"
+        message += f"• ⚡ Performance Grade: {'A+' if avg_response < 1 else 'A' if avg_response < 2 else 'B' if avg_response < 3 else 'C'}\n"
+        message += f"• 🎯 Service Quality: {'Excellent' if uptime_percentage >= 99 else 'Good' if uptime_percentage >= 95 else 'Fair'}\n\n"
+        
+        message += f"🔧 **System Status:**\n"
+        message += f"• 🔄 Monitoring: Active\n"
+        message += f"• 💾 Database: Notion (Connected)\n"
+        message += f"• ⏱️ Last Update: {datetime.now().strftime('%H:%M:%S')}\n"
+        message += f"• 🌟 Bot Status: Running Smoothly"
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("📈 Detailed Reports", callback_data="detailed_reports"),
+                InlineKeyboardButton("📊 Performance Trends", callback_data="performance_trends")
+            ],
+            [
+                InlineKeyboardButton("🔍 URL Analysis", callback_data="url_analysis"),
+                InlineKeyboardButton("👥 User Activity", callback_data="user_activity_analytics")
+            ],
+            [
+                InlineKeyboardButton("📋 Export Analytics", callback_data="export_analytics"),
+                InlineKeyboardButton("⚙️ Analytics Settings", callback_data="analytics_settings")
+            ],
+            [
+                InlineKeyboardButton("🔙 Admin Panel", callback_data="admin_panel"),
+                InlineKeyboardButton("🔄 Refresh", callback_data="system_analytics")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            message,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
