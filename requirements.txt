@@ -1,0 +1,18 @@
+# Python Dependencies for Telegram URL Monitor Bot
+# Install these packages using: pip install <package_name>
+
+python-telegram-bot==22.3
+aiohttp==3.12.15
+
+# Built-in Python modules (no installation needed):
+# asyncio
+# logging
+# os
+# json
+# time
+# datetime
+telegram
+flask
+notion-client
+notion-client
+notion-client
